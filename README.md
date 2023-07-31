@@ -1,0 +1,1 @@
+# geometric-hasty-shortcuts
