@@ -7,7 +7,14 @@ const C_barrier = 4
 const lambda_cutoff = 10
 const state_cutoff = 0.05
 
-nn_mat = XLSX.readdata("/Users/suprajachittari/Documents/assisted assembly/d8_NN_forcode.xlsx","Sheet1","A1:C8") # nearest neighbor matrix (to be read in) 
+const nn_mat = [4 2 5
+                1 3 6
+                2 4 7
+                3 1 8
+                8 6 1
+                5 7 2
+                6 8 3
+                7 5 4]
 
 ###############################################################
 ########################## Functions ##########################
