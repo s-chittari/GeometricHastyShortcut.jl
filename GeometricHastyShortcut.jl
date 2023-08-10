@@ -1,28 +1,20 @@
-using SparseArrays
-using LinearAlgebra
-using XLSX
-using Arpack
-using Plots
-using CSV
-using DelimitedFiles
-using DataFrames
-using Tables
-using ProgressBars
+const N = 8 # number of lattice sites
+const h = 1 # field strength
+const J = -0.5 # coupling strength
+const kb = 1
+const T = 1
+const C_barrier = 4
+const lambda_cutoff = 10
+const state_cutoff = 0.05
 
-###############################################################
-####################### Gobal variables #######################
-###############################################################
-
-N = 8 # number of lattice sites
-h = 1 # field strength
-J = -0.5 # coupling strength
-kb = 1
-T = 1
-C_barrier = 4
-lambda_cutoff = 10
-state_cutoff = 0.05
-
-nn_mat = XLSX.readdata("/Users/suprajachittari/Documents/assisted assembly/d8_NN_forcode.xlsx","Sheet1","A1:C8") # nearest neighbor matrix (to be read in) 
+const nn_mat = [4 2 5
+                1 3 6
+                2 4 7
+                3 1 8
+                8 6 1
+                5 7 2
+                6 8 3
+                7 5 4]
 
 ###############################################################
 ########################## Functions ##########################
@@ -372,6 +364,15 @@ function eigendecomp(mat)
     return evals, evecs
 end
 
+function normalization_check(mat)
+    for i in 1:length(mat[1,:])
+        if abs(sum(mat[:,i])) > 1E-6
+            println("Matrix is not normalized. Sum is ", sum(mat[i,:]))
+            break
+        end
+    end
+end
+
 ###############################################################
 ########## Timescale separation, dimension reduction ##########
 ###############################################################
@@ -518,71 +519,6 @@ function evolve_state(rate_mat, map, Q, p_init, time)
 end
 
 ###############################################################
-################# Quantities of interest ######################
-###############################################################
-function KL_divergence(p,q)
-    KL_div = 0
-
-    for i = 1:length(p)
-        KL_div += p[i]*log(p[i]/q[i])
-    end
-
-    return KL_div
-end
-
-function shannon_entropy(p)
-    entropy = Vector()
-
-    for j = 1:length(p[1,:])
-        S = 0
-
-        for i = 1:length(p[:,j])
-            S += p[i,j]*log(p[i,j])
-        end
-
-        push!(entropy, -1*S)
-    end
-
-    return entropy
-end
-
-function rare_states(p, support, equilib1, equilib2)
-    states_env1 = findall(x -> x >= state_cutoff, equilib1)
-    states_env2 = findall(x -> x >= state_cutoff, equilib2)
-    states = union(states_env1, states_env2)
-
-    max_prob = 0
-    max_state = 0
-
-    for i = 1:length(p[1,:])
-        prob, state = findmax(p[:,i])
-
-        if (support[state] ∉ states)
-            if prob > max_prob
-                max_prob = prob
-                max_state = support[state]
-            end
-        end
-    end
-
-    return max_state, max_prob
-end
-
-###############################################################
-################## Functions for sanity check #################
-###############################################################
-
-function normalization_check(mat)
-    for i in 1:length(mat[1,:])
-        if abs(sum(mat[:,i])) > 1E-6
-            println("Matrix is not normalized. Sum is ", sum(mat[i,:]))
-            break
-        end
-    end
-end
-
-
-###############################################################
 ########################## Set generation #####################
 ###############################################################
 c_vec_short = collect(0.1:0.5:3.6)
@@ -603,8 +539,6 @@ env_pattern = zeros(set_size, 5+init_envs)
 equilibs = zeros(24, init_envs)
 
 for i = 1:init_envs
-    # global set_index
-
     # initialize environment
     c_i = c_vec[i]
 
@@ -613,7 +547,6 @@ for i = 1:init_envs
     rate_mat = mat_construction(rates_rows, rates_columns, rates)
     normalization_check(rate_mat)
     
-
     # eigendecomposition
     evals, evecs = eigendecomp(rate_mat)
 
@@ -621,19 +554,12 @@ for i = 1:init_envs
     largest_eval, support = timescale_separation(evals, evecs)
     map = mapping_space(rate_mat, largest_eval, support, evals, evecs[:,1])
     push!(mapping_matrices, map)
-    # push!(support_vector, support)
 
     equilibs[:,i] = evecs[:,1]
 
     if maximum(abs.(map*evecs[:,1] - evecs[:,1])) > 1E-10
         println("Error in mapping matrix")
     end
-    # println(rate_mat*equilibs[:,i])
-    # pass equilibrium distribution to the matrix
-    # set[:,set_index] = evecs[:,1]
-    # env_pattern[set_index, 1] = i
-    # histogram[i] = 1
-    # set_index += 1
 end
 
 # set epsilon here
@@ -642,57 +568,60 @@ epsilon = 1E-7 # dummy variable to be rechanged
 # epsilon = epsilon 
 print("Epsilon is ", epsilon)
 
-# print()
-# c1_then_2 = recovery(mapping_matrices[1]*set[:,2], set[:,1], support_vector[1])
-# println(recovery(mapping_matrices[10]*c1_then_2, set[:,10], support_vector[10]))
-
-# epsilon = 1
-# println(epsilon)
-
-pairs = Vector()
-# for i = 1:constrained_envs
-#     for j = 1:init_envs
-#         for k = 1:init_envs
-#             first = mapping_matrices[k]*mapping_matrices[j]*equilibs[:,i]
-#             second = mapping_matrices[k]*mapping_matrices[j]*mapping_matrices[k]*mapping_matrices[j]*equilibs[:,i]
-#             third = mapping_matrices[k]*mapping_matrices[j]*mapping_matrices[k]*mapping_matrices[j]*mapping_matrices[k]*mapping_matrices[j]*equilibs[:,i]
-
-#             if maximum(abs.(second-third)) > 1E-2
-#                 push!(pairs, [i,j,k])
-#             end
-#         end
-#     end
-# end
-max = 1E-1
-pair = Vector()
-for i = 1:constrained_envs
+for i = 1:init_envs
     for j = 1:init_envs
         for k = 1:init_envs
-            first = mapping_matrices[i]*mapping_matrices[k]*mapping_matrices[j]*equilibs[:,i]
-            second = mapping_matrices[i]*mapping_matrices[j]*mapping_matrices[k]*equilibs[:,i]
+            global set_index
 
-            if maximum(abs.(second-first)) > max
-                max = maximum(abs.(second-first))
-                pair = [i,j,k]
+            dist = mapping_matrices[k]*mapping_matrices[j]*equilibs[:,i]
+
+            set[:,set_index] = dist
+            env_pattern[set_index, 1] = i
+            env_pattern[set_index, 2] = j 
+            env_pattern[set_index, 3] = k 
+
+            for m = 1:init_envs
+                mapped_dist = mapping_matrices[m]*dist
+        
+                if maximum(abs.(mapped_dist - equilibs[:,m])) < epsilon
+                    env_pattern[set_index,(m+3)] = m
+                end
             end
+
+            set_index += 1
         end
     end
 end
-print(pair)
-print(max)
-println(equilibs[:,1])
-println(mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
-println(mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
-println(mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
-println(mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
 
-println(mapping_matrices[3]*mapping_matrices[6]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
+# generation of intermediate set
 
-println(equilibs[:,1])
-println(mapping_matrices[3]*equilibs[:,1])
-println(mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
-println(mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
-println(mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*mapping_matrices[15]*mapping_matrices[3]*equilibs[:,1])
+intermediate_set = zeros(24, init_envs^2)
+intermediate_env = zeros(init_envs^2, 2)
+new_index = 1
 
-println(mapping_matrices[8]*mapping_matrices[1]*mapping_matrices[15]*equilibs[:,8])
-println(mapping_matrices[8]*mapping_matrices[15]*mapping_matrices[1]*equilibs[:,8])
+for i = 1:init_envs
+    for j = 1:init_envs
+        global new_index
+
+        intermediate_set[:,new_index] = mapping_matrices[j]*equilibs[:,i]
+        intermediate_env[new_index, 1] = i
+        intermediate_env[new_index, 2] = j 
+
+        new_index += 1
+    end
+end
+
+equilib_df = DataFrame(equilibs, :auto)
+CSV.write("equilib.csv", equilib_df)
+
+set_df = DataFrame(set, :auto)
+CSV.write("set.csv", set_df)
+
+int_env_df = DataFrame(intermediate_env, :auto)
+CSV.write("intermediate_env.csv", int_env_df)
+
+int_set = DataFrame(intermediate_set, :auto)
+CSV.write("intermediate_set.csv", int_set)
+
+env_df = DataFrame(env_pattern, :auto)
+CSV.write("environment_pattern.csv", env_df)
